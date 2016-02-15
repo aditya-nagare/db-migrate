@@ -1,45 +1,46 @@
 package main
-//	"flag"
 
 import (
 	"fmt"
+	"flag"
 	"os"
 	"io/ioutil"
 )
 
 func main() {
-	 var initPtr = true
-//	initPtr := flag.Bool("init", false, "a string")
-//	flag.Parse()	
 	
-	if (initPtr == true) {
-		var folderExist = false
-		var confFileExist = false
-//		folderExist, err   := exists("./sqls")
-//		confFileExist, err := exists("./migrater.conf")
-//		if(err == nil) {
-//			fmt.Println("Some error occured")
-//		}
-		
-		if(folderExist == false && confFileExist == false) { //folder, conf does not exist
-			fmt.Println("sqls AND conf does not exist -- creating")
-			createConfFile()
-			createSqlsFolder()
-		} else if(folderExist == true && confFileExist == false) {//folder exist, conf not
-			fmt.Println("folder exist, file not")
-			createConfFile()
-		} else if (folderExist == false && confFileExist == true) {
-			createSqlsFolder()
-			fmt.Println("SQL folder not exist, conf does exist")
-		} else { //both exist
-			fmt.Println("Already an migrater directory")
-		}
-//		fmt.Println("Value:", *initPtr)	
+	initPtr := flag.Bool("init", false, "-init")
+	newPtr  := flag.Bool("new", false, "-new")
+	
+	flag.Parse()	
+	fmt.Println("value :", *newPtr)
+	
+	if (*initPtr == true) {
+		initAction()
+		return	
+	} else if(*newPtr == true) {
+		fmt.Println("New command called")
 	}
 }
 
-func initAction() {
+func initAction() bool {
+	folderExist,   _ := exists("./sqls")
+	confFileExist, _ := exists("./migrater.conf")
 	
+	if(folderExist == false && confFileExist == false) { //folder, conf does not exist
+		fmt.Println("Initializing migrater folder...")
+		createConfFile()
+		createSqlsFolder()
+	} else if(folderExist == true && confFileExist == false) {//folder exist, conf not
+		fmt.Println("Initializing migrater folder...")
+		createConfFile()
+	} else if (folderExist == false && confFileExist == true) {
+		createSqlsFolder()
+		fmt.Println("Initializing migrater folder...")
+	} else { //both exist
+		fmt.Println("Already an migrater directory")
+	}
+	return true
 }
 
 func exists(path string) (bool, error) {
@@ -51,6 +52,13 @@ func exists(path string) (bool, error) {
 		return false, nil 
 	}
     return true, err
+}
+
+func createNewMigration() {
+	//check sqls directory exist
+	//check is there any file with pattern dddd_name exist 
+	//take use of file from user
+	//create mock file with temp data in it
 }
 
 func createConfFile() (bool, error) {
@@ -70,6 +78,7 @@ func createSqlsFolder() (bool, error) {
 	return true, nil
 }
 /**
+go build migrater.go && ./migrater -init
 
 migrater -init : will create "sqls" directory, migrater.conf file it will have connection info for databas
 migrater -new : should be run from valid migrater directory, having "sqls" folder, it will create .sql 
