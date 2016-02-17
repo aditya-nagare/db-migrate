@@ -74,7 +74,8 @@ func createNewMigration() (bool, error) {
 	
 	regx, _ := regexp.Compile("^[0-9]{4}_")
 	
-	var counter int64 = 1;
+	var counter, preFileNum int64 = 1, 0;
+	
 	for _, f := range fileList{
 		var fileName = f.Name()
 		match := regx.FindString(fileName)
@@ -87,11 +88,14 @@ func createNewMigration() (bool, error) {
 		fileNum, _ := strconv.ParseInt(match, 10, 64)
 		
 		fmt.Println(fileNum, counter)
-		
-		if(counter != fileNum){
+		if(preFileNum == fileNum) {
+			fmt.Printf("%04d_* file has a duplicate entry. Please remove one. \n", fileNum)
+			return false, nil
+		} else if(counter != fileNum){
 			fmt.Printf("%04d_*.sql file is missing\n", counter);
 			return false, nil
 		}
+		preFileNum = fileNum;
 		counter++
 	}
 	
