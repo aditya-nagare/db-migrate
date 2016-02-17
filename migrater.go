@@ -5,6 +5,8 @@ import (
 	"flag"
 	"os"
 	"io/ioutil"
+	"syscall"
+	"regexp"
 )
 
 func main() {
@@ -19,7 +21,7 @@ func main() {
 		initAction()
 		return	
 	} else if(*newPtr == true) {
-		fmt.Println("New command called")
+		createNewMigration();
 	}
 }
 
@@ -54,8 +56,34 @@ func exists(path string) (bool, error) {
     return true, err
 }
 
-func createNewMigration() {
-	//check sqls directory exist
+func createNewMigration() (bool, error) {
+	folderExist,   _ := exists("./sqls")
+	if(folderExist == false){
+		fmt.Println("\"sqls\" folder does not exist please use \"migrater -init\" command to initialize")
+		return false, nil;
+	}
+
+	if( isWritable("./sqls") == false) {
+		fmt.Println("sqls folder is not writable. Please make it writable and try again");
+		return false, nil
+	}
+	
+	fileList, _ := ioutil.ReadDir("./sqls/")
+	
+	for _, f := range fileList{
+		var fileName = f.Name()
+		match, _ := regexp.MatchString("^[0-9]{4}_", fileName)
+		if(match == true) {
+			fmt.Println(fileName)	
+		} else {
+			fmt.Println("---"+fileName)
+		}
+	}
+	
+//	fmt.Println(fileList)
+	return true, nil
+	
+	//check sqls directory exist and writable
 	//check is there any file with pattern dddd_name exist 
 	//take use of file from user
 	//create mock file with temp data in it
@@ -76,6 +104,10 @@ func createSqlsFolder() (bool, error) {
         panic(err)
     }
 	return true, nil
+}
+
+func isWritable(path string) bool {
+    return syscall.Access(path, 2) == nil
 }
 /**
 go build migrater.go && ./migrater -init
