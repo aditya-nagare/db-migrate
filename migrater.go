@@ -7,6 +7,8 @@ import (
 	"io/ioutil"
 	"syscall"
 	"regexp"
+	"strings"
+	"strconv"
 )
 
 func main() {
@@ -70,14 +72,27 @@ func createNewMigration() (bool, error) {
 	
 	fileList, _ := ioutil.ReadDir("./sqls/")
 	
+	regx, _ := regexp.Compile("^[0-9]{4}_")
+	
+	var counter int64 = 1;
 	for _, f := range fileList{
 		var fileName = f.Name()
-		match, _ := regexp.MatchString("^[0-9]{4}_", fileName)
-		if(match == true) {
-			fmt.Println(fileName)	
-		} else {
-			fmt.Println("---"+fileName)
+		match := regx.FindString(fileName)
+		
+		if(match == "") {
+			continue
+		}	
+
+		match = strings.Replace(match, "_", "", 1)
+		fileNum, _ := strconv.ParseInt(match, 10, 64)
+		
+		fmt.Println(fileNum, counter)
+		
+		if(counter != fileNum){
+			fmt.Printf("%04d_*.sql file is missing\n", counter);
+			return false, nil
 		}
+		counter++
 	}
 	
 //	fmt.Println(fileList)
