@@ -90,7 +90,7 @@ func createNewMigration() (bool, error) {
 		
 		fmt.Println(fileNum, counter)
 		if(preFileNum == fileNum) {
-			fmt.Printf("%04d_* file has a duplicate entry. Please remove one. \n", fileNum)
+			fmt.Printf("%04d_* file has a duplicate entry. Please remove duplicates. \n", fileNum)
 			return false, nil
 		} else if(counter != fileNum){
 			fmt.Printf("%04d_*.sql file is missing\n", counter);
@@ -108,15 +108,14 @@ func createNewMigration() (bool, error) {
     fileDesc = strings.ToLower(strings.Trim(fileDesc, ""))
 	reg, _ := regexp.Compile("[^A-Za-z0-9]+")
     newFileDesc := reg.ReplaceAllString(fileDesc, "_")
-
 	newFileName := fmt.Sprintf("%04d_%s.sql", counter, newFileDesc)
-    fmt.Println(newFileName)	
 	
-	var content = []byte("[up]\n\n\n\n[down]")
+	var content = []byte("[up]\n;sql up queries here\n\n\n[down]\n sql down queries here")
 	var err = ioutil.WriteFile("./sqls/"+newFileName, content, 0755)
     if err != nil {
         panic(err)
     }
+    fmt.Println("New file created ./sqls/"+newFileName)	
 	
 	return true, nil
 	
