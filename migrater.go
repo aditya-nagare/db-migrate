@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 	"strconv"
+	"bufio"
 )
 
 func main() {
@@ -98,8 +99,25 @@ func createNewMigration() (bool, error) {
 		preFileNum = fileNum;
 		counter++
 	}
+
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Println("New .sql file description :")
+	fileDesc, _ := reader.ReadString('\n')
+	fmt.Println(fileDesc)
 	
-//	fmt.Println(fileList)
+    fileDesc = strings.ToLower(strings.Trim(fileDesc, ""))
+	reg, _ := regexp.Compile("[^A-Za-z0-9]+")
+    newFileDesc := reg.ReplaceAllString(fileDesc, "_")
+
+	newFileName := fmt.Sprintf("%04d_%s.sql", counter, newFileDesc)
+    fmt.Println(newFileName)	
+	
+	var content = []byte("[up]\n\n\n\n[down]")
+	var err = ioutil.WriteFile("./sqls/"+newFileName, content, 0755)
+    if err != nil {
+        panic(err)
+    }
+	
 	return true, nil
 	
 	//check sqls directory exist and writable
