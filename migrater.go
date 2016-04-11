@@ -1,5 +1,8 @@
 package main
 
+import "database/sql"
+import _ "github.com/go-sql-driver/mysql"
+
 import (
 	"fmt"
 	"flag"
@@ -10,15 +13,73 @@ import (
 	"strings"
 	"strconv"
 	"bufio"
+	"github.com/vaughan0/go-ini"
 )
+
 
 func main() {
 	
+	configFileName := "config.ini"
+	config, err := ini.LoadFile(configFileName)
+	if err != nil {
+		fmt.Println(err)
+		return;
+	}
+	
+	dbConfig := map[string]string {"dbtype":"", "dbname":"", "hostname":"", "username":"", "password":""}
+	fmt.Println(dbConfig["dbtype"])	
+
+	confCheckError := false	
+	for confKey, _ := range dbConfig {
+		value , ok := config.Get("database", confKey)
+		if !ok {
+		  fmt.Println( confKey + " entry is missing in "+configFileName)
+			confCheckError = true
+		}
+		dbConfig[confKey] = value
+	}
+	
+	if(confCheckError == true) {
+		return;
+	}
+	fmt.Println(dbConfig);
+	
+	
+	db, err := sql.Open("mysql", "root:password@/temp")
+	if err != nil {
+	    panic(err.Error()) // Just for example purpose. You should use proper error handling instead of panic
+	}
+	defer db.Close()
+	
+	// Open doesn't open a connection. Validate DSN data:
+	err = db.Ping()
+	if err != nil {
+	    panic(err.Error()) // proper error handling instead of panic in your app
+	}
+	
+	rows, err := db.Query("SELECT * FROM test")
+    if err != nil {
+        panic(err.Error()) // proper error handling instead of panic in your app
+    }
+    
+	columns, _ := rows.Columns()
+	if err != nil {
+        panic(err.Error()) // proper error handling instead of panic in your app
+    }
+		
+    fmt.Printf("value of id : %d, Name : %s  ", 1,  columns)
+	return; 
+	
+	
+	
+	
+	
+		
 	initPtr := flag.Bool("init", false, "-init")
 	newPtr  := flag.Bool("new", false, "-new")
 	
 	flag.Parse()	
-	fmt.Println("value :", *newPtr)
+//	fmt.Println("value :", *newPtr)
 	
 	if (*initPtr == true) {
 		initAction()
@@ -88,7 +149,6 @@ func createNewMigration() (bool, error) {
 		match = strings.Replace(match, "_", "", 1)
 		fileNum, _ := strconv.ParseInt(match, 10, 64)
 		
-		fmt.Println(fileNum, counter)
 		if(preFileNum == fileNum) {
 			fmt.Printf("%04d_* file has a duplicate entry. Please remove duplicates. \n", fileNum)
 			return false, nil
@@ -101,11 +161,10 @@ func createNewMigration() (bool, error) {
 	}
 
 	reader := bufio.NewReader(os.Stdin)
-	fmt.Println("New .sql file description :")
+	fmt.Println("\nNew .sql file description :")
 	fileDesc, _ := reader.ReadString('\n')
-	fmt.Println(fileDesc)
 	
-    fileDesc = strings.ToLower(strings.Trim(fileDesc, ""))
+    fileDesc = strings.ToLower(strings.Trim(fileDesc, "\n"))
 	reg, _ := regexp.Compile("[^A-Za-z0-9]+")
     newFileDesc := reg.ReplaceAllString(fileDesc, "_")
 	newFileName := fmt.Sprintf("%04d_%s.sql", counter, newFileDesc)
@@ -115,14 +174,11 @@ func createNewMigration() (bool, error) {
     if err != nil {
         panic(err)
     }
-    fmt.Println("New file created ./sqls/"+newFileName)	
-	
+	fmt.Println("\n--------------------------------------------------------------------------------------------")
+    fmt.Println("New file created at ./sqls/"+newFileName+", Write your new SQL up and down statements in it.")	
+	fmt.Println("--------------------------------------------------------------------------------------------\n")
+
 	return true, nil
-	
-	//check sqls directory exist and writable
-	//check is there any file with pattern dddd_name exist 
-	//take use of file from user
-	//create mock file with temp data in it
 }
 
 func createConfFile() (bool, error) {
@@ -155,4 +211,6 @@ migrater -new : should be run from valid migrater directory, having "sqls" folde
 migrater -update : will run all the migration against database
 migrater -v 5 : it will up or down the migrations from sqls folder
 how am I going to use conf 
+
+mysql drivers used : https://github.com/go-sql-driver/mysql
 **/
