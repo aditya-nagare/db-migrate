@@ -1,19 +1,20 @@
 package main
 
-import "database/sql"
 import _ "github.com/go-sql-driver/mysql"
 
 import (
-	"fmt"
+	"bufio"
+	"database/sql"
+	"errors"
 	"flag"
-	"os"
+	"fmt"
+	"github.com/vaughan0/go-ini"
 	"io/ioutil"
-	"syscall"
 	"regexp"
+	"os"
 	"strings"
 	"strconv"
-	"bufio"
-	"github.com/vaughan0/go-ini"
+	"syscall"
 )
 
 
@@ -26,14 +27,18 @@ func main() {
 		return;
 	}
 	
-	dbConfig := map[string]string {"dbtype":"", "dbname":"", "hostname":"", "username":"", "password":""}
-	fmt.Println(dbConfig["dbtype"])	
+	dbConfig := map[string]string {"dbtype":"", "dbname":"", "hostname":"", "port":"", "username":"", "password":""}
 
 	confCheckError := false	
 	for confKey, _ := range dbConfig {
 		value , ok := config.Get("database", confKey)
+		val        := strings.Trim(value, " ")
+		
 		if !ok {
 		  fmt.Println( confKey + " entry is missing in "+configFileName)
+			confCheckError = true
+		} else if  val == "" {
+			fmt.Println( confKey + " value can not be blank in "+configFileName)
 			confCheckError = true
 		}
 		dbConfig[confKey] = value
@@ -42,16 +47,21 @@ func main() {
 	if(confCheckError == true) {
 		return;
 	}
-	fmt.Println(dbConfig);
 	
+	if(dbConfig["dbtype"] != "mysql") {
+		printMsgLine("Unsupported database, Currently migration tool only support 'mysql' database.", "error")
+		return;
+	}
 	
-	db, err := sql.Open("mysql", "root:password@/temp")
+	dbConnString, _ := getDBConnString(dbConfig)
+	fmt.Println(dbConnString)
+	db, err := sql.Open(dbConfig["dbtype"], dbConnString)
 	if err != nil {
-	    panic(err.Error()) // Just for example purpose. You should use proper error handling instead of panic
+	    fmt.Println(err);
+		return;
 	}
 	defer db.Close()
 	
-	// Open doesn't open a connection. Validate DSN data:
 	err = db.Ping()
 	if err != nil {
 	    panic(err.Error()) // proper error handling instead of panic in your app
@@ -69,11 +79,7 @@ func main() {
 		
     fmt.Printf("value of id : %d, Name : %s  ", 1,  columns)
 	return; 
-	
-	
-	
-	
-	
+
 		
 	initPtr := flag.Bool("init", false, "-init")
 	newPtr  := flag.Bool("new", false, "-new")
@@ -107,6 +113,25 @@ func initAction() bool {
 		fmt.Println("Already an migrater directory")
 	}
 	return true
+}
+
+//func getDBConnection(dbConfig map[string]string) (bool, error) {
+//	fmt.Println("in func")
+//	fmt.Println(dbConfig)
+//	return true, nil
+//	db, err := sql.Open("mysql", "root:password@/temp")
+//	if err != nil {
+//	    panic(err.Error()) // Just for example purpose. You should use proper error handling instead of panic
+//	}
+//}
+
+func getDBConnString(dbConfig map[string]string) (string, error) {
+	if(dbConfig["dbtype"] == "mysql") {
+//		root:password@tcp(localhost:3306)/temp
+		dbConnString := dbConfig["username"]+":"+dbConfig["password"]+"@tcp("+ dbConfig["hostname"]+":"+ dbConfig["port"]+ ")/"+dbConfig["dbname"]
+		return  dbConnString, nil
+	}
+	return "", errors.New("Invalid datatype")
 }
 
 func exists(path string) (bool, error) {
@@ -201,7 +226,16 @@ func createSqlsFolder() (bool, error) {
 func isWritable(path string) bool {
     return syscall.Access(path, 2) == nil
 }
+
+func printMsgLine(msg string, msgType string) {
+	if(msgType == "error") {
+		fmt.Println(msg)//print in red color
+		return; 
+	}
+	fmt.Println(msg)
+}
 /**
+export GOPATH=`pwd`
 go build migrater.go && ./migrater -init
 
 migrater -init : will create "sqls" directory, migrater.conf file it will have connection info for databas
