@@ -21,6 +21,7 @@ import (
 func main() {
 	
 	configFileName := "config.ini"
+	migrTableName  := "db_migrations"
 	config, err := ini.LoadFile(configFileName)
 	if err != nil {
 		fmt.Println(err)
@@ -54,7 +55,6 @@ func main() {
 	}
 	
 	dbConnString, _ := getDBConnString(dbConfig)
-	fmt.Println(dbConnString)
 	db, err := sql.Open(dbConfig["dbtype"], dbConnString)
 	if err != nil {
 	    fmt.Println(err);
@@ -67,17 +67,31 @@ func main() {
 	    panic(err.Error()) // proper error handling instead of panic in your app
 	}
 	
-	rows, err := db.Query("SELECT * FROM test")
+	result := existMigrationTable(db, dbConfig, migrTableName)
+	fmt.Println(result)
+	return ;
+	rows, err := db.Query("SELECT id, name FROM test")
     if err != nil {
         panic(err.Error()) // proper error handling instead of panic in your app
     }
+	
+	var (
+		id int
+		name string
+	)
     
-	columns, _ := rows.Columns()
-	if err != nil {
-        panic(err.Error()) // proper error handling instead of panic in your app
-    }
-		
-    fmt.Printf("value of id : %d, Name : %s  ", 1,  columns)
+	for rows.Next() {
+		err := rows.Scan(&id, &name)
+		if err != nil {
+//			fmt.Fatal(err)
+		}
+		fmt.Println(id, name)
+	}
+	err = rows.Err()
+	fmt.Println(err)
+	
+//	columns1, _ := rows.Columns()	
+//    fmt.Printf("value of id : %d, Name : %s  ", 1,  columns1.name)
 	return; 
 
 		
@@ -132,6 +146,32 @@ func getDBConnString(dbConfig map[string]string) (string, error) {
 		return  dbConnString, nil
 	}
 	return "", errors.New("Invalid datatype")
+}
+
+func existMigrationTable(dbConn *sql.DB, dbConfig map[string]string, migrTableName string) bool {
+	query := "SELECT COUNT(*) as tableExist FROM information_schema.tables WHERE table_schema = '"+dbConfig["dbname"]+"'  AND table_name = '"+migrTableName+"'"
+	rows, err := dbConn.Query(query)
+    if(err != nil) {
+		fmt.Println(err);
+	}
+	var tableExist int
+	
+	next := rows.Next() 
+	if(next == false) {
+		return false
+	}
+	
+	exist  := rows.Scan(&tableExist)
+	if err != nil {
+		fmt.Println(err)
+	}
+	if(tableExist == 0) {
+//		migraions table not found in db, create new with appropriate columnsable
+		return false
+	}
+	return true
+	fmt.Println(exist)
+	return true
 }
 
 func exists(path string) (bool, error) {
