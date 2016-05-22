@@ -63,12 +63,15 @@ func main() {
 
 	err = db.Ping()
 	if err != nil {
-		panic(err.Error()) // proper error handling instead of panic in your app
+		fmt.Println("DB Error", err.Error())
+		os.Exit(1)
 	}
 
 	result := existMigrationTable(db, dbConfig, migrTableName)
 	fmt.Println(result)
 	return
+	
+	
 	rows, err := db.Query("SELECT id, name FROM test")
 	if err != nil {
 		panic(err.Error()) // proper error handling instead of panic in your app
@@ -163,12 +166,16 @@ func existMigrationTable(dbConn *sql.DB, dbConfig map[string]string, migrTableNa
 	if err != nil {
 		fmt.Println(err)
 	}
-	if tableExist == 0 {
-		//migraions table not found in db, create new with appropriate columnsable
-		return false
+	
+	if exist == nil && tableExist == 0 {//migraion table not exist, create it
+		var createTableQuery = "CREATE TABLE IF NOT EXISTS "+migrTableName+"(version int(10), description varchar(200) NOT NULL, sql_file varchar(200) NOT NULL,  created_on datetime NOT NULL,  PRIMARY KEY (version))"
+		_, err := dbConn.Query(createTableQuery)
+		if(err == nil) {
+			return true 					
+		}
+		fmt.Println("Error occurred while creating migrations table:", err) 
+		os.Exit(1)
 	}
-	return true
-	fmt.Println(exist)
 	return true
 }
 
@@ -271,6 +278,7 @@ func printMsgLine(msg string, msgType string) {
 		return
 	}
 	fmt.Println(msg)
+	return
 }
 
 /**
