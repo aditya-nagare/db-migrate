@@ -20,84 +20,10 @@ import (
 func main() {
 
 	configFileName := "config.ini"
-	migrTableName := "db_migrations"
-	config, err := ini.LoadFile(configFileName)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-
-	dbConfig := map[string]string{"dbtype": "", "dbname": "", "hostname": "", "port": "", "username": "", "password": ""}
-
-	confCheckError := false
-	for confKey, _ := range dbConfig {
-		value, ok := config.Get("database", confKey)
-		val := strings.Trim(value, " ")
-
-		if !ok {
-			fmt.Println(confKey + " entry is missing in " + configFileName)
-			confCheckError = true
-		} else if val == "" {
-			fmt.Println(confKey + " value can not be blank in " + configFileName)
-			confCheckError = true
-		}
-		dbConfig[confKey] = value
-	}
-
-	if confCheckError == true {
-		return
-	}
-
-	if dbConfig["dbtype"] != "mysql" {
-		printMsgLine("Unsupported database, Currently migration tool only support 'mysql' database.", "error")
-		return
-	}
-
-	dbConnString, _ := getDBConnString(dbConfig)
-	db, err := sql.Open(dbConfig["dbtype"], dbConnString)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-	defer db.Close()
-
-	err = db.Ping()
-	if err != nil {
-		fmt.Println("DB Error", err.Error())
-		os.Exit(1)
-	}
-
-	result := existMigrationTable(db, dbConfig, migrTableName)
-	fmt.Println(result)
-	return
 	
-	
-	rows, err := db.Query("SELECT id, name FROM test")
-	if err != nil {
-		panic(err.Error()) // proper error handling instead of panic in your app
-	}
-
-	var (
-		id   int
-		name string
-	)
-
-	for rows.Next() {
-		err := rows.Scan(&id, &name)
-		if err != nil {
-			//			fmt.Fatal(err)
-		}
-		fmt.Println(id, name)
-	}
-	err = rows.Err()
-	fmt.Println(err)
-
-	//	columns1, _ := rows.Columns()
-	//    fmt.Printf("value of id : %d, Name : %s  ", 1,  columns1.name)
-	return
-
 	initPtr := flag.Bool("init", false, "-init")
 	newPtr := flag.Bool("new", false, "-new")
+	updatePtr := flag.Bool("up", false, "-up")
 
 	flag.Parse()
 	//	fmt.Println("value :", *newPtr)
@@ -107,7 +33,10 @@ func main() {
 		return
 	} else if *newPtr == true {
 		createNewMigration()
+	} else if *updatePtr == true {
+		updateMigrations(configFileName)
 	}
+	fmt.Println("\n");
 }
 
 func initAction() bool {
@@ -130,16 +59,6 @@ func initAction() bool {
 	return true
 }
 
-//func getDBConnection(dbConfig map[string]string) (bool, error) {
-//	fmt.Println("in func")
-//	fmt.Println(dbConfig)
-//	return true, nil
-//	db, err := sql.Open("mysql", "root:password@/temp")
-//	if err != nil {
-//	    panic(err.Error()) // Just for example purpose. You should use proper error handling instead of panic
-//	}
-//}
-
 func getDBConnString(dbConfig map[string]string) (string, error) {
 	if dbConfig["dbtype"] == "mysql" {
 		//		root:password@tcp(localhost:3306)/temp
@@ -149,7 +68,7 @@ func getDBConnString(dbConfig map[string]string) (string, error) {
 	return "", errors.New("Invalid datatype")
 }
 
-func existMigrationTable(dbConn *sql.DB, dbConfig map[string]string, migrTableName string) bool {
+func existMigrationTable(dbConn *sql.DB, dbConfig map[string]string, migrTableName string) {
 	query := "SELECT COUNT(*) as tableExist FROM information_schema.tables WHERE table_schema = '" + dbConfig["dbname"] + "'  AND table_name = '" + migrTableName + "'"
 	rows, err := dbConn.Query(query)
 	if err != nil {
@@ -159,24 +78,25 @@ func existMigrationTable(dbConn *sql.DB, dbConfig map[string]string, migrTableNa
 
 	next := rows.Next()
 	if next == false {
-		return false
+		fmt.Println("Some error occurred while checking migrations table exist in db")
+		os.Exit(1)
 	}
 
 	exist := rows.Scan(&tableExist)
 	if err != nil {
 		fmt.Println(err)
+		os.Exit(1)
 	}
 	
 	if exist == nil && tableExist == 0 {//migraion table not exist, create it
 		var createTableQuery = "CREATE TABLE IF NOT EXISTS "+migrTableName+"(version int(10), description varchar(200) NOT NULL, sql_file varchar(200) NOT NULL,  created_on datetime NOT NULL,  PRIMARY KEY (version))"
 		_, err := dbConn.Query(createTableQuery)
 		if(err == nil) {
-			return true 					
+			return
 		}
 		fmt.Println("Error occurred while creating migrations table:", err) 
 		os.Exit(1)
 	}
-	return true
 }
 
 func exists(path string) (bool, error) {
@@ -203,7 +123,6 @@ func createNewMigration() (bool, error) {
 	}
 
 	fileList, _ := ioutil.ReadDir("./sqls/")
-
 	regx, _ := regexp.Compile("^[0-9]{4}_")
 
 	var counter, preFileNum int64 = 1, 0
@@ -275,12 +194,138 @@ func isWritable(path string) bool {
 func printMsgLine(msg string, msgType string) {
 	if msgType == "error" {
 		fmt.Println(msg) //print in red color
-		return
+		os.Exit(1)
 	}
 	fmt.Println(msg)
 	return
 }
 
+func getConfigValues(configFileName string) (map[string]string) {
+
+	config, err := ini.LoadFile(configFileName)
+	if err != nil {
+		fmt.Println("Error : ", err);
+		os.Exit(1)
+	}
+
+	dbConfig := map[string]string{"dbtype": "", "dbname": "", "hostname": "", "port": "", "username": "", "password": ""}
+
+	confCheckError := false
+	for confKey, _ := range dbConfig {
+		value, ok := config.Get("database", confKey)
+		val := strings.Trim(value, " ")
+
+		if !ok {
+			fmt.Println(confKey + " entry is missing in " + configFileName)
+			confCheckError = true
+		} else if val == "" {
+			fmt.Println(confKey + " value can not be blank in " + configFileName)
+			confCheckError = true
+		}
+		dbConfig[confKey] = value
+	}
+
+	if confCheckError == true {
+		os.Exit(1)
+	}
+
+	if dbConfig["dbtype"] != "mysql" {
+		printMsgLine("Unsupported database, Currently migration tool only support 'mysql' database.", "error")
+		os.Exit(1)
+	}
+	return dbConfig
+}
+
+func updateMigrations(configFileName string) { 
+	migrTableName := "db_migrations"
+	dbConfig := getConfigValues(configFileName)
+	dbConnString, _ := getDBConnString(dbConfig)
+	db, err := sql.Open(dbConfig["dbtype"], dbConnString)
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+	defer db.Close()
+
+	err = db.Ping()
+	if err != nil {
+		fmt.Println("DB Error", err.Error())
+		os.Exit(1)
+	}
+
+	existMigrationTable(db, dbConfig, migrTableName)
+	getTopVersionQuery := "SELECT IFNULL(MAX(version), 0) as curVersion FROM "+migrTableName
+	rows, err := db.Query(getTopVersionQuery)
+	
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+	
+	var 	curVersion int
+
+	for rows.Next() {
+		err := rows.Scan(&curVersion)
+		if err != nil {
+			fmt.Println("DB error :", err)
+		}
+		break
+	}
+	
+	folderExist, _ := exists("./sqls")
+	if folderExist == false {
+		fmt.Println("\"sqls\" folder does not exist please use \"migrater -init\" command to initialize")
+		os.Exit(0)
+	} else if isWritable("./sqls") == false {
+		fmt.Println("sqls folder is not writable. Please make it writable and try again")
+		os.Exit(0)
+	}
+	
+	fileList, _ := ioutil.ReadDir("./sqls/")
+	regx, _ := regexp.Compile("^[0-9]{4}_")
+	
+	var counter, preFileNum int64 = 1, 0
+	var sqlFiles []string
+
+	for _, f := range fileList {//loop for checking duplicate and missing sql files, code is redundant in createMigraion script too, refactor
+		var fileName = f.Name()
+		match := regx.FindString(fileName)
+		if match == "" {
+			continue
+		}
+
+		match = strings.Replace(match, "_", "", 1)
+		fileNum, _ := strconv.ParseInt(match, 10, 64)
+
+		if preFileNum == fileNum {
+			fmt.Printf("%04d_* file has a duplicate entry. Please remove duplicates. \n", fileNum)
+			os.Exit(0)
+		} else if counter != fileNum {
+			fmt.Printf("%04d_*.sql file is missing\n", counter)
+			os.Exit(0)
+		}
+		preFileNum = fileNum
+		counter++
+		sqlFiles = append(sqlFiles, fileName)
+	}	
+
+	counter--
+	topMigrationVersion := preFileNum
+	nextVersion := curVersion + 1
+	
+	if counter == 1 && curVersion == 0 {
+		fmt.Println("Running all migrations from start...")	
+	} else {
+		fmt.Printf("Running migrations from version %04d to %04d",nextVersion, topMigrationVersion)			
+	}
+	
+	for _, sqlFileName := range sqlFiles {
+		fmt.Println(sqlFileName)	
+	}
+	
+//	fmt.Print(sqlFiles, counter)
+	
+}
 /**
 export GOPATH=`pwd`
 go build migrater.go && ./migrater -init
@@ -289,8 +334,8 @@ migrater -init : will create "sqls" directory, migrater.conf file it will have c
 migrater -new : should be run from valid migrater directory, having "sqls" folder, it will create .sql
 	file in sqls directory, will take first 50 chars of desc and append with name like
 	0002_desc_of_file.sql, it will also write desc in file itself at start of file commented.
-migrater -update : will run all the migration against database
-migrater -v 5 : it will up or down the migrations from sqls folder
+migrater -up : will run all the migration against database
+--migrater -v 5 : it will up or down the migrations from sqls folder
 how am I going to use conf
 
 mysql drivers used : https://github.com/go-sql-driver/mysql
