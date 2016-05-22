@@ -320,8 +320,47 @@ func updateMigrations(configFileName string) {
 	}
 	
 	for _, sqlFileName := range sqlFiles {
-		fmt.Println(sqlFileName)	
+		fmt.Println("\n\n\n", sqlFileName)
+		file, err := os.Open("./sqls/"+sqlFileName)
+
+	    if err != nil {
+	        fmt.Println(err)
+	    }
+	    defer file.Close()
+	
+	    scanner := bufio.NewScanner(file)
+		var query, queryLine, queryLineTrimmed string
+		queryEndRegEx, _ := regexp.Compile(";$")
+		
+	    for scanner.Scan() {
+			queryLine = scanner.Text()
+			queryLineTrimmed = strings.Trim(queryLine, " ")
+			match := queryEndRegEx.FindString(queryLineTrimmed)
+			if match == "" {
+				query += queryLine
+			} else {//
+			
+			line ends with semicolon, query 
+				rows, err := db.Query(getTopVersionQuery)
+	
+				if err != nil {
+					fmt.Println(err)
+					os.Exit(1)
+				}
+				fmt.Println("---", query)
+				query = ""
+			}
+	    }
+		fmt.Println("==---", query, queryLine)
+	
+	    if err := scanner.Err(); err != nil {
+	        fmt.Println(err)
+	    }	
+		
 	}
+	
+	
+	
 	
 //	fmt.Print(sqlFiles, counter)
 	
