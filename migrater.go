@@ -329,8 +329,18 @@ func updateMigrations(configFileName string) {
 	    defer file.Close()
 	
 	    scanner := bufio.NewScanner(file)
+		if err := scanner.Err(); err != nil {
+	        fmt.Println(err)
+			os.Exit(0)
+	    }
+
 		var query, queryLine, queryLineTrimmed string
 		queryEndRegEx, _ := regexp.Compile(";$")
+		transaction, transErr := db.Begin()
+		if(transErr != nil) {
+			fmt.Println(transErr)
+			os.Exit(0)
+		}
 		
 	    for scanner.Scan() {
 			queryLine = scanner.Text()
@@ -338,32 +348,32 @@ func updateMigrations(configFileName string) {
 			match := queryEndRegEx.FindString(queryLineTrimmed)
 			if match == "" {
 				query += queryLine
-			} else {//
-			
-			line ends with semicolon, query 
-				rows, err := db.Query(getTopVersionQuery)
-	
+			} else {//line ends with semicolon, query 
+				query += queryLine
+				result, err := db.Query(query)
 				if err != nil {
+					fmt.Println("Error in file : ./sqls/"+sqlFileName)
 					fmt.Println(err)
+			
+					err := transaction.Rollback()
+					fmt.Println("Error occurred, rolling back all queries from "+fileName)
 					os.Exit(1)
+					fmt.Println(result)
 				}
-				fmt.Println("---", query)
 				query = ""
+				queryLine = ""
 			}
 	    }
-		fmt.Println("==---", query, queryLine)
-	
-	    if err := scanner.Err(); err != nil {
-	        fmt.Println(err)
-	    }	
-		
+		fmt.Println("==---", query, " --  ", queryLine)
+		regxVersion, _ := regexp.Compile("^([0-9]{4})")
+		migrVersion := regxVersion.FindString(fileName)
+		updateMigrQuery := "INSERT INTO "+migrTableName+"(version, description, sql_file, created_on) VALUES ('"+migrVersion+"', '"+fileName"', '"+fileName+"', now()"
+		transErr = transaction.Commit()
+		if transErr != nil {
+			err := transaction.Rollback()
+			fmt.Println("Error occurred, rolling back all queries from "+fileName)
+		}
 	}
-	
-	
-	
-	
-//	fmt.Print(sqlFiles, counter)
-	
 }
 /**
 export GOPATH=`pwd`
