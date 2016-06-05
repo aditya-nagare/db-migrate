@@ -17,10 +17,12 @@ import (
 	"syscall"
 )
 
+var db *sql.DB
+
 func main() {
 
 	configFileName := "config.ini"
-	
+
 	initPtr := flag.Bool("init", false, "-init")
 	newPtr := flag.Bool("new", false, "-new")
 	updatePtr := flag.Bool("up", false, "-up")
@@ -34,9 +36,12 @@ func main() {
 	} else if *newPtr == true {
 		createNewMigration()
 	} else if *updatePtr == true {
-		updateMigrations(configFileName)
+		err := updateMigrations(configFileName)
+		if err != nil {
+			fmt.Println(err)
+		}
 	}
-	fmt.Println("\n");
+	fmt.Println("\n")
 }
 
 func initAction() bool {
@@ -87,14 +92,14 @@ func existMigrationTable(dbConn *sql.DB, dbConfig map[string]string, migrTableNa
 		fmt.Println(err)
 		os.Exit(1)
 	}
-	
-	if exist == nil && tableExist == 0 {//migraion table not exist, create it
-		var createTableQuery = "CREATE TABLE IF NOT EXISTS "+migrTableName+"(version int(10), description varchar(200) NOT NULL, sql_file varchar(200) NOT NULL,  created_on datetime NOT NULL,  PRIMARY KEY (version))"
+
+	if exist == nil && tableExist == 0 { //migraion table not exist, create it
+		var createTableQuery = "CREATE TABLE IF NOT EXISTS " + migrTableName + "(version int(10), description varchar(200) NOT NULL, sql_file varchar(200) NOT NULL,  created_on datetime NOT NULL,  PRIMARY KEY (version))"
 		_, err := dbConn.Query(createTableQuery)
-		if(err == nil) {
+		if err == nil {
 			return
 		}
-		fmt.Println("Error occurred while creating migrations table:", err) 
+		fmt.Println("Error occurred while creating migrations table:", err)
 		os.Exit(1)
 	}
 }
@@ -164,15 +169,23 @@ func createNewMigration() (bool, error) {
 		panic(err)
 	}
 	fmt.Println("\n--------------------------------------------------------------------------------------------")
-	fmt.Println("New file created at ./sqls/" + newFileName + ", Write your new SQL up and down statements in it.")
+	//	fmt.Println("New file created at ./sqls/" + newFileName + ", Write your new SQL up and down statements in it.")
+	fmt.Println("New file created at ./sqls/" + newFileName + ", Write your new SQL statements in it.")
 	fmt.Println("--------------------------------------------------------------------------------------------\n")
-
 	return true, nil
 }
 
 func createConfFile() (bool, error) {
-	var content = []byte("content configuration")
-	var err = ioutil.WriteFile("./settings.conf", content, 0755)
+	var configContent = `[database]
+dbtype   = mysql
+dbname   = 
+hostname = localhost
+port     = 3306
+username = 
+password = `
+
+	var content = []byte(configContent)
+	var err = ioutil.WriteFile("./config.ini", content, 0755)
 	if err != nil {
 		panic(err)
 	}
@@ -200,11 +213,11 @@ func printMsgLine(msg string, msgType string) {
 	return
 }
 
-func getConfigValues(configFileName string) (map[string]string) {
+func getConfigValues(configFileName string) map[string]string {
 
 	config, err := ini.LoadFile(configFileName)
 	if err != nil {
-		fmt.Println("Error : ", err);
+		fmt.Println("Error : ", err)
 		os.Exit(1)
 	}
 
@@ -236,58 +249,54 @@ func getConfigValues(configFileName string) (map[string]string) {
 	return dbConfig
 }
 
-func updateMigrations(configFileName string) { 
+func updateMigrations(configFileName string) error {
 	migrTableName := "db_migrations"
 	dbConfig := getConfigValues(configFileName)
 	dbConnString, _ := getDBConnString(dbConfig)
 	db, err := sql.Open(dbConfig["dbtype"], dbConnString)
 	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
+		return err
 	}
 	defer db.Close()
 
 	err = db.Ping()
 	if err != nil {
-		fmt.Println("DB Error", err.Error())
-		os.Exit(1)
+		return errors.New("DB Error : " + err.Error())
 	}
 
 	existMigrationTable(db, dbConfig, migrTableName)
-	getTopVersionQuery := "SELECT IFNULL(MAX(version), 0) as curVersion FROM "+migrTableName
+
+	getTopVersionQuery := "SELECT IFNULL(MAX(version), 0) as curVersion FROM " + migrTableName
 	rows, err := db.Query(getTopVersionQuery)
-	
+
 	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
+		return err
 	}
-	
-	var 	curVersion int
+
+	var curVersion int64
 
 	for rows.Next() {
 		err := rows.Scan(&curVersion)
 		if err != nil {
-			fmt.Println("DB error :", err)
+			return err
 		}
 		break
 	}
-	
+
 	folderExist, _ := exists("./sqls")
 	if folderExist == false {
-		fmt.Println("\"sqls\" folder does not exist please use \"migrater -init\" command to initialize")
-		os.Exit(0)
+		return errors.New("\"sqls\" folder does not exist please use \"migrater -init\" command to initialize")
 	} else if isWritable("./sqls") == false {
-		fmt.Println("sqls folder is not writable. Please make it writable and try again")
-		os.Exit(0)
+		return errors.New("sqls folder is not writable. Please make it writable and try again")
 	}
-	
+
 	fileList, _ := ioutil.ReadDir("./sqls/")
 	regx, _ := regexp.Compile("^[0-9]{4}_")
-	
+
 	var counter, preFileNum int64 = 1, 0
 	var sqlFiles []string
 
-	for _, f := range fileList {//loop for checking duplicate and missing sql files, code is redundant in createMigraion script too, refactor
+	for _, f := range fileList { //loop for checking duplicate and missing sql files, code is redundant in createMigraion script too, refactor
 		var fileName = f.Name()
 		match := regx.FindString(fileName)
 		if match == "" {
@@ -298,84 +307,99 @@ func updateMigrations(configFileName string) {
 		fileNum, _ := strconv.ParseInt(match, 10, 64)
 
 		if preFileNum == fileNum {
-			fmt.Printf("%04d_* file has a duplicate entry. Please remove duplicates. \n", fileNum)
-			os.Exit(0)
+			var errorMsg = fmt.Sprintf("%04d_* file has a duplicate entry. Please remove duplicates. \n", fileNum)
+			return errors.New(errorMsg)
 		} else if counter != fileNum {
-			fmt.Printf("%04d_*.sql file is missing\n", counter)
-			os.Exit(0)
+			var errorMsg = fmt.Sprintf("%04d_*.sql file is missing\n", counter)
+			return errors.New(errorMsg)
 		}
 		preFileNum = fileNum
 		counter++
 		sqlFiles = append(sqlFiles, fileName)
-	}	
+	}
 
 	counter--
 	topMigrationVersion := preFileNum
 	nextVersion := curVersion + 1
-	
-	if counter == 1 && curVersion == 0 {
-		fmt.Println("Running all migrations from start...")	
-	} else {
-		fmt.Printf("Running migrations from version %04d to %04d",nextVersion, topMigrationVersion)			
-	}
-	
-	for _, sqlFileName := range sqlFiles {
-		fmt.Println("\n\n\n", sqlFileName)
-		file, err := os.Open("./sqls/"+sqlFileName)
 
-	    if err != nil {
-	        fmt.Println(err)
-	    }
-	    defer file.Close()
-	
-	    scanner := bufio.NewScanner(file)
+	if counter == 1 && curVersion == 0 {
+		fmt.Println("Running all migrations from start...")
+	} else {
+		if curVersion == topMigrationVersion {
+			fmt.Println("Database is up to date, no new migration to run!")
+			fmt.Println("Current database version: ", topMigrationVersion)
+			return nil
+		} else if nextVersion == topMigrationVersion {
+			fmt.Printf("Running migration version %04d \n", nextVersion)
+		} else {
+			fmt.Printf("Running migrations from version %04d to %04d\n", nextVersion, topMigrationVersion)
+		}
+	}
+
+	for _, sqlFileName := range sqlFiles {
+		match := regx.FindString(sqlFileName)
+		match = strings.Replace(match, "_", "", 1)
+		fileNum, _ := strconv.ParseInt(match, 10, 64)
+
+		if fileNum < nextVersion {
+			continue
+		}
+		fmt.Println("Running queries from ", sqlFileName, "file")
+		file, err := os.Open("./sqls/" + sqlFileName)
+
+		if err != nil {
+			fmt.Println(err)
+		}
+		defer file.Close()
+
+		scanner := bufio.NewScanner(file)
 		if err := scanner.Err(); err != nil {
-	        fmt.Println(err)
-			os.Exit(0)
-	    }
+			return err
+		}
 
 		var query, queryLine, queryLineTrimmed string
 		queryEndRegEx, _ := regexp.Compile(";$")
-		transaction, transErr := db.Begin()
-		if(transErr != nil) {
-			fmt.Println(transErr)
-			os.Exit(0)
-		}
-		
-	    for scanner.Scan() {
+
+		for scanner.Scan() {
 			queryLine = scanner.Text()
 			queryLineTrimmed = strings.Trim(queryLine, " ")
 			match := queryEndRegEx.FindString(queryLineTrimmed)
 			if match == "" {
 				query += queryLine
-			} else {//line ends with semicolon, query 
+			} else { //line ends with semicolon, query
 				query += queryLine
-				result, err := db.Query(query)
+				_, err := db.Exec(query)
 				if err != nil {
-					fmt.Println("Error in file : ./sqls/"+sqlFileName)
-					fmt.Println(err)
-			
-					err := transaction.Rollback()
-					fmt.Println("Error occurred, rolling back all queries from "+fileName)
-					os.Exit(1)
-					fmt.Println(result)
+					fmt.Println("\nError in file : ./sqls/"+sqlFileName, ", Unfortunately mysql doesn't support rollback(NO support for Transactional DDL queries) for prevouly exceuted queries in this file.")
+					return err
 				}
 				query = ""
 				queryLine = ""
 			}
-	    }
-		fmt.Println("==---", query, " --  ", queryLine)
+		}
+
 		regxVersion, _ := regexp.Compile("^([0-9]{4})")
-		migrVersion := regxVersion.FindString(fileName)
-		updateMigrQuery := "INSERT INTO "+migrTableName+"(version, description, sql_file, created_on) VALUES ('"+migrVersion+"', '"+fileName"', '"+fileName+"', now()"
-		transErr = transaction.Commit()
-		if transErr != nil {
-			err := transaction.Rollback()
-			fmt.Println("Error occurred, rolling back all queries from "+fileName)
+		migrVersion := regxVersion.FindString(sqlFileName)
+
+		regxDesc, _ := regexp.Compile("([0-9]{4}_|.sql)")
+		migrDescBytes := regxDesc.ReplaceAll([]byte(sqlFileName), []byte(""))
+		migrDesc := strings.Replace(string(migrDescBytes), "_", " ", -1)
+
+		updateMigrQuery := "INSERT INTO " + migrTableName + "(version, description, sql_file, created_on) VALUES ('" + migrVersion + "', '" + migrDesc + "', '" + sqlFileName + "', now())"
+		_, updateErr := db.Exec(updateMigrQuery)
+		if updateErr != nil {
+			return err
 		}
 	}
+	fmt.Println("Current database version: ", topMigrationVersion)
+	return nil
 }
+
 /**
+
+
+@todo : when no parameters given to command print manual page
+
 export GOPATH=`pwd`
 go build migrater.go && ./migrater -init
 
@@ -388,4 +412,6 @@ migrater -up : will run all the migration against database
 how am I going to use conf
 
 mysql drivers used : https://github.com/go-sql-driver/mysql
+http://engineroom.teamwork.com/go-learn/
+for db http://jinzhu.me/gorm/
 **/
